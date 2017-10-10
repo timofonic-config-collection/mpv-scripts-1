@@ -1,12 +1,12 @@
 lookahead = 5
 speedup = 2.5
 leadin = 1
+skipmode=false
 ---------------
 
 normalspeed=mp.get_property_native("speed")
 
 function set_timeout()
-   local time_out
    if mp.get_property_native("cache-size") ~= nil then
       time_out = mp.get_property_native("cache-secs")
    else
@@ -26,7 +26,7 @@ function check_should_speedup()
    local subdelay = mp.get_property_native("sub-delay")
    mp.command("no-osd set sub-visibility no")
    mp.command("no-osd sub-step 1")
-   local mark = mp.get_property_native("time-pos")
+   local mark = mp.get_property("time-pos")
    local nextsubdelay = mp.get_property_native("sub-delay")
    local nextsub = subdelay - nextsubdelay
    mp.set_property("sub-delay", subdelay)
@@ -48,29 +48,26 @@ end
 function speed_transition(_, sub)
    if state == 0 then
       if sub == "" then
-         nextsub, shouldspeedup, speedup_zone_begin = check_should_speedup()
-         mark = speedup_zone_begin
-         speedup_zone_end = mark+nextsub
+         nextsub, shouldspeedup, mark = check_should_speedup()
          if shouldspeedup then
-            normalspeed = mp.get_property("speed")
-            if mp.get_property_native("video-sync") == "audio" then
-               mp.set_property("video-sync", "desync")
-            end
-            mp.set_property("speed", speedup)
-            mp.observe_property("time-pos", "native", check_position)
-            state = 1
+            if skipmode == true and nextsub>=leadin then
+               mp.command("no-osd seek "..tostring(nextsub-leadin).." relative exact")
+            else
+               normalspeed = mp.get_property("speed")
+               if mp.get_property_native("video-sync") == "audio" then
+                  mp.set_property("video-sync", "desync")
+               end
+               mp.set_property("speed", speedup)
+               mp.observe_property("time-pos", "native", check_position)
+               state = 1
+			   end
          end
       end
    elseif state == 1 then
-      if sub ~= "" and sub ~= nil or not mp.get_property_native("sid") then
+      if sub ~= "" and sub ~= nil then
          mp.unobserve_property(check_position)
          restore_normalspeed()
          state = 0
-      else
-         local pos = mp.get_property_native("time-pos", 0)
-         if pos < speedup_zone_begin or pos > speedup_zone_end then
-            nextsub, _ , mark = check_should_speedup()
-         end
       end
    end
 end
@@ -119,18 +116,9 @@ function toggle()
    enable = not enable
 end
 
-function reset_on_file_load()
-   if state == 1 then
-      mp.unobserve_property(check_position)
-      restore_normalspeed()
-      state = 0
-   end
-end
-
 mp.add_key_binding("ctrl+j", "toggle_speedtrans", toggle)
 mp.add_key_binding("alt+j", "toggle_sub_visibility", toggle_sub_visibility)
 mp.add_key_binding("alt++", "increase_speedup", function() change_speedup(0.1) end)
 mp.add_key_binding("alt+-", "decrease_speedup", function() change_speedup(-0.1) end)
 mp.add_key_binding("alt+0", "increase_leadin", function() change_leadin(0.25) end)
 mp.add_key_binding("alt+9", "decrease_leadin", function() change_leadin(-0.25) end)
-mp.register_event("file-loaded", reset_on_file_load)
